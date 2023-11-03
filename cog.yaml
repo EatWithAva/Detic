@@ -1,6 +1,4 @@
 build:
-  gpu: false
-  # cuda: "10.1"
   python_version: "3.8"
   system_packages:
     - "libgl1-mesa-glx"
