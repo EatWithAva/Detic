@@ -1,9 +1,9 @@
 import sys
 import cv2
 import tempfile
-# from pathlib import Path
 from cog import BasePredictor, Input, Path
 import time
+import torch
 
 # import some common detectron2 utilities
 from detectron2.engine import DefaultPredictor
@@ -17,6 +17,8 @@ from centernet.config import add_centernet_config
 from detic.config import add_detic_config
 from detic.modeling.utils import reset_cls_test
 from detic.modeling.text.text_encoder import build_text_encoder
+
+from typing import Any
 
 class Predictor(BasePredictor):
     def setup(self):
@@ -43,30 +45,11 @@ class Predictor(BasePredictor):
             'coco': 'coco_2017_val',
         }
 
-    # @cog.input(
-    #     "image",
-    #     type=Path,
-    #     help="input image",
-    # )
-    # @cog.input(
-    #     "vocabulary",
-    #     type=str,
-    #     default='lvis',
-    #     options=['lvis', 'objects365', 'openimages', 'coco', 'custom'],
-    #     help="Choose vocabulary",
-    # )
-    # @cog.input(
-    #     "custom_vocabulary",
-    #     type=str,
-    #     default=None,
-    #     help="Type your own vocabularies, separated by coma ','",
-    # )
-
     def predict(self,
           image: Path = Input(description="Grayscale input image"),
           vocabulary: str = Input(description="Vocabulary of choice", default='lvis', choices=['lvis', 'objects365', 'openimages', 'coco', 'custom']),
           custom_vocabulary: str = Input(description="Custom vocabulary, comma separated", default=None)
-    ) -> Path:
+    ) -> Any:
         image = cv2.imread(str(image))
         if not vocabulary == 'custom':
             metadata = MetadataCatalog.get(self.BUILDIN_METADATA_PATH[vocabulary])
@@ -92,7 +75,34 @@ class Predictor(BasePredictor):
         out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
         out_path = Path(tempfile.mkdtemp()) / "out.png"
         cv2.imwrite(str(out_path), out.get_image()[:, :, ::-1])
-        return out_path
+
+        response = {}
+        response['annotatedFile'] = out_path
+
+        if "instances" in outputs:
+            instances = outputs["instances"].to("cpu")
+            class_names = metadata.thing_classes
+            boxes = instances.pred_boxes if instances.has("pred_boxes") else None
+            box_objs = []
+            for b in  boxes.tensor.tolist():
+                box_objs.append( { 'x1': b[0], 'y1': b[1], 'x2': b[2], 'y2': b[3] } )
+
+            scores = instances.scores.tolist()
+            predicted_class_indicies = instances.pred_classes.tolist() if instances.has("pred_classes") else None
+
+            predicted_class_names = []
+            for c_i in predicted_class_indicies:
+                predicted_class_names.append(class_names[c_i])
+
+            pred_masks = instances.pred_masks if instances.has("pred_masks") else None
+            pixel_counts = torch.sum(pred_masks, dim=(1, 2)).tolist() if pred_masks != None else None
+
+            predictions = []
+            for (c, score, box, pixel_count) in zip(predicted_class_names, scores, box_objs, pixel_counts):
+                predictions.append({ 'class': c, 'score': score, 'box': box, 'pixelCount': pixel_count } )
+
+            response['predictions'] = predictions
+        return response
 
 
 def get_clip_embeddings(vocabulary, prompt='a '):
