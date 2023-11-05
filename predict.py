@@ -30,7 +30,7 @@ class Predictor(BasePredictor):
         cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
         cfg.MODEL.ROI_BOX_HEAD.ZEROSHOT_WEIGHT_PATH = 'rand'
         cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = True
-        cfg.MODEL.DEVICE='cpu'
+        # cfg.MODEL.DEVICE='cpu'
         self.predictor = DefaultPredictor(cfg)
         self.BUILDIN_CLASSIFIER = {
             'lvis': 'datasets/metadata/lvis_v1_clip_a+cname.npy',
