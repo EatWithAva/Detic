@@ -31,6 +31,9 @@ class Predictor(BasePredictor):
         cfg.MODEL.ROI_BOX_HEAD.ZEROSHOT_WEIGHT_PATH = 'rand'
         cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = True
         # cfg.MODEL.DEVICE='cpu'
+        self.clip_text_encoder = build_text_encoder(pretrain=True)
+        self.clip_text_encoder.eval()
+
         self.predictor = DefaultPredictor(cfg)
         self.BUILDIN_CLASSIFIER = {
             'lvis': 'datasets/metadata/lvis_v1_clip_a+cname.npy',
@@ -47,6 +50,7 @@ class Predictor(BasePredictor):
 
     def predict(self,
           image: Path = Input(description="Grayscale input image"),
+          predict_food_tray: bool = Input(description="Add Food Tray Prediction to output", default=False),
           vocabulary: str = Input(description="Vocabulary of choice", default='lvis', choices=['lvis', 'objects365', 'openimages', 'coco', 'custom']),
           custom_vocabulary: str = Input(description="Custom vocabulary, comma separated", default=None)
     ) -> Any:
@@ -62,7 +66,7 @@ class Predictor(BasePredictor):
                 "Please provide your own vocabularies when vocabulary is set to 'custom'."
             metadata = MetadataCatalog.get(str(time.time()))
             metadata.thing_classes = custom_vocabulary.split(',')
-            classifier = get_clip_embeddings(metadata.thing_classes)
+            classifier = self.get_clip_embeddings(metadata.thing_classes)
             num_classes = len(metadata.thing_classes)
             reset_cls_test(self.predictor.model, classifier, num_classes)
             # Reset visualization threshold
@@ -79,6 +83,27 @@ class Predictor(BasePredictor):
         response = {}
         response['annotatedFile'] = out_path
 
+        response['predictions'] = self.compute_full_prediction_output(metadata, outputs)
+
+        if predict_food_tray:
+            metadata = MetadataCatalog.get(str(time.time()))
+            metadata.thing_classes = ["tray"]
+            classifier = self.get_clip_embeddings(metadata.thing_classes)
+            num_classes = len(metadata.thing_classes)
+            reset_cls_test(self.predictor.model, classifier, num_classes)
+            # Reset visualization threshold
+            output_score_threshold = 0.3
+            for cascade_stages in range(len(self.predictor.model.roi_heads.box_predictor)):
+                self.predictor.model.roi_heads.box_predictor[cascade_stages].test_score_thresh = output_score_threshold
+            outputs = self.predictor(image)
+
+            response['tray_predictions'] = self.compute_full_prediction_output(metadata, outputs)
+
+        return response
+
+
+    def compute_full_prediction_output(self, metadata, outputs):
+        predictions = []
         if "instances" in outputs:
             instances = outputs["instances"].to("cpu")
             class_names = metadata.thing_classes
@@ -97,17 +122,12 @@ class Predictor(BasePredictor):
             pred_masks = instances.pred_masks if instances.has("pred_masks") else None
             pixel_counts = torch.sum(pred_masks, dim=(1, 2)).tolist() if pred_masks != None else None
 
-            predictions = []
             for (c, score, box, pixel_count) in zip(predicted_class_names, scores, box_objs, pixel_counts):
                 predictions.append({ 'class': c, 'score': score, 'box': box, 'pixelCount': pixel_count } )
 
-            response['predictions'] = predictions
-        return response
+        return predictions
 
-
-def get_clip_embeddings(vocabulary, prompt='a '):
-    text_encoder = build_text_encoder(pretrain=True)
-    text_encoder.eval()
-    texts = [prompt + x for x in vocabulary]
-    emb = text_encoder(texts).detach().permute(1, 0).contiguous().cpu()
-    return emb
+    def get_clip_embeddings(self, vocabulary, prompt='a '):
+        texts = [prompt + x for x in vocabulary]
+        emb = self.clip_text_encoder(texts).detach().permute(1, 0).contiguous().cpu()
+        return emb
