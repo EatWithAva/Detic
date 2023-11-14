@@ -27,7 +27,7 @@ class Predictor(BasePredictor):
         add_detic_config(cfg)
         cfg.merge_from_file("configs/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.yaml")
         cfg.MODEL.WEIGHTS = 'models/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth'
-        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.1  # set threshold for this model
         cfg.MODEL.ROI_BOX_HEAD.ZEROSHOT_WEIGHT_PATH = 'rand'
         cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = True
         # cfg.MODEL.DEVICE='cpu'
@@ -70,7 +70,7 @@ class Predictor(BasePredictor):
             num_classes = len(metadata.thing_classes)
             reset_cls_test(self.predictor.model, classifier, num_classes)
             # Reset visualization threshold
-            output_score_threshold = 0.3
+            output_score_threshold = 0.1
             for cascade_stages in range(len(self.predictor.model.roi_heads.box_predictor)):
                 self.predictor.model.roi_heads.box_predictor[cascade_stages].test_score_thresh = output_score_threshold
 
@@ -92,7 +92,7 @@ class Predictor(BasePredictor):
             num_classes = len(metadata.thing_classes)
             reset_cls_test(self.predictor.model, classifier, num_classes)
             # Reset visualization threshold
-            output_score_threshold = 0.3
+            output_score_threshold = 0.1
             for cascade_stages in range(len(self.predictor.model.roi_heads.box_predictor)):
                 self.predictor.model.roi_heads.box_predictor[cascade_stages].test_score_thresh = output_score_threshold
             outputs = self.predictor(image)
